@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+*.pt
+!models/best.pt
+
+# Ultralytics / training outputs
+runs/
+weights/
+wandb/
+logs/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
