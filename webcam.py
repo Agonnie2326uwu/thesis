@@ -2,40 +2,20 @@ from ultralytics import YOLO
 import cv2
 from pathlib import Path
 
-candidates = [
-    Path(__file__).resolve().parent / "models" / "best.pt",
-    Path(__file__).resolve().parent
-    / "runs"
-    / "detect"
-    / "agonnie2326uwu"
-    / "thesissticker"
-    / "train"
-    / "weights"
-    / "best.pt",
-]
-weights = next((p for p in candidates if p.is_file()), candidates[0])
+# Portable weights path so classmates can clone and run.
+# Newly trained weights live in models/best.pt (copied from the latest run).
+weights = Path(__file__).resolve().parent / "models" / "best.pt"
 if not weights.is_file():
     raise FileNotFoundError(f"Trained weights not found: {weights}")
 
+# Load the NEW trained model
 model = YOLO(str(weights))
-cap = None
-for camera_index in (0, 1):
-    for backend in (cv2.CAP_MSMF, cv2.CAP_DSHOW):
-        candidate = cv2.VideoCapture(camera_index, backend)
-        if candidate.isOpened():
-            cap = candidate
-            print(f"Using camera {camera_index} with backend {backend}.")
-            break
-        candidate.release()
-    if cap is not None:
-        break
 
-if cap is None:
-    raise RuntimeError(
-        "Could not open cameras 0 or 1 with Media Foundation or DirectShow. "
-        "Check Windows camera permissions, confirm a camera is connected, and close "
-        "other apps that may be using it."
-    )
+# Open webcam
+cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+
+if not cap.isOpened():
+    raise RuntimeError("Could not open webcam.")
 
 print("Webcam started.")
 print("Press Q to quit.")
@@ -43,21 +23,68 @@ print("Press Q to quit.")
 try:
     while True:
         ret, frame = cap.read()
+
         if not ret:
             print("Error: Could not read frame.")
             break
 
         results = model.predict(
             source=frame,
-            conf=0.60,
+            conf=0.40,
             imgsz=640,
-            verbose=False,
+            verbose=False
         )
-        annotated_frame = results[0].plot()
-        cv2.imshow("YOLO26 Vehicle Sticker Detection", annotated_frame)
+
+        # Process detections
+        for box in results[0].boxes:
+            class_id = int(box.cls[0])
+            confidence = float(box.conf[0])
+
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+
+            class_name = model.names[class_id]
+
+            # Blur faces
+            if class_name == "BlurrFace":
+                face = frame[y1:y2, x1:x2]
+
+                if face.size > 0:
+                    blurred_face = cv2.GaussianBlur(
+                        face,
+                        (51, 51),
+                        0
+                    )
+
+                    frame[y1:y2, x1:x2] = blurred_face
+
+            # Draw vehicle sticker detection
+            elif class_name == "PSU vehicle sticker":
+                cv2.rectangle(
+                    frame,
+                    (x1, y1),
+                    (x2, y2),
+                    (0, 255, 0),
+                    2
+                )
+
+                cv2.putText(
+                    frame,
+                    f"{class_name} {confidence:.2f}",
+                    (x1, max(y1 - 10, 20)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (0, 255, 0),
+                    2
+                )
+
+        cv2.imshow(
+            "YOLO26 Vehicle Sticker + Face Blur",
+            frame
+        )
 
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
+
 finally:
     cap.release()
     cv2.destroyAllWindows()
